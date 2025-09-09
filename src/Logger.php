@@ -4,10 +4,11 @@
  *
  * A simple, lean logging library for WordPress plugins and themes.
  *
- * @package ArrayPress\WPLogger
- * @since   1.0.0
- * @author  ArrayPress
- * @license GPL-2.0-or-later
+ * @package     ArrayPress\Logger
+ * @copyright   Copyright (c) 2025, ArrayPress Limited
+ * @license     GPL-2.0-or-later
+ * @version     1.1.0
+ * @author      ArrayPress
  */
 
 declare( strict_types=1 );
@@ -21,7 +22,9 @@ use WP_Error;
 /**
  * WordPress Logger Class
  *
- * Simple logging for WordPress with automatic file handling.
+ * Simple logging for WordPress with automatic file handling and smart defaults.
+ *
+ * @since 1.0.0
  */
 class Logger {
 
@@ -47,29 +50,23 @@ class Logger {
 	private bool $enabled;
 
 	/**
-	 * Whether debug mode is enabled
-	 *
-	 * @var bool
-	 */
-	private bool $debug_mode;
-
-	/**
 	 * Constructor
 	 *
-	 * @param string $name       Plugin/theme name for file naming.
-	 * @param array  $options    Optional configuration.
-	 *                           {
+	 * @param string $name     Plugin/theme name for file naming.
+	 * @param array  $options  Optional configuration.
+	 *                         {
+	 *                         Optional configuration arguments.
 	 *
-	 * @type string  $log_file   Custom log file path.
-	 * @type bool    $enabled    Whether logging is enabled. Default true.
-	 * @type bool    $debug_mode Whether debug logging is enabled. Default false.
-	 *                           }
+	 * @type bool    $enabled  Whether logging is enabled. Default: follows WP_DEBUG.
+	 * @type string  $log_file Custom log file path or filename. Default: uploads/{name}/debug.log.
+	 *                         }
+	 *
+	 * @since 1.0.0
 	 */
 	public function __construct( string $name, array $options = [] ) {
-		$this->name       = sanitize_key( $name );
-		$this->enabled    = $options['enabled'] ?? true;
-		$this->debug_mode = $options['debug_mode'] ?? false;
-		$this->log_file   = $options['log_file'] ?? $this->get_default_log_file();
+		$this->name     = sanitize_key( $name );
+		$this->enabled  = $options['enabled'] ?? $this->should_enable_logging();
+		$this->log_file = $this->determine_log_file( $options['log_file'] ?? null );
 
 		$this->setup_log_directory();
 	}
@@ -81,6 +78,7 @@ class Logger {
 	 * @param array  $context Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function error( string $message, array $context = [] ): void {
 		$this->log( $message, $context, 'ERROR' );
@@ -93,6 +91,7 @@ class Logger {
 	 * @param array  $context Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function warning( string $message, array $context = [] ): void {
 		$this->log( $message, $context, 'WARNING' );
@@ -105,9 +104,10 @@ class Logger {
 	 * @param array  $context Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function info( string $message, array $context = [] ): void {
-		$this->log( $message, $context, 'INFO' );
+		$this->log( $message, $context );
 	}
 
 	/**
@@ -117,28 +117,22 @@ class Logger {
 	 * @param array  $context Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function debug( string $message, array $context = [] ): void {
-		if ( ! $this->debug_mode ) {
-			return;
-		}
-
 		$this->log( $message, $context, 'DEBUG' );
 	}
 
 	/**
 	 * Log an exception
 	 *
-	 * @param Exception|Throwable $exception Exception to log.
-	 * @param array               $context   Additional context data.
+	 * @param Throwable $exception Exception to log.
+	 * @param array     $context   Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
-	public function exception( $exception, array $context = [] ): void {
-		if ( ! ( $exception instanceof Throwable ) ) {
-			return;
-		}
-
+	public function exception( Throwable $exception, array $context = [] ): void {
 		$context = array_merge( $context, [
 			'file'  => $exception->getFile(),
 			'line'  => $exception->getLine(),
@@ -157,6 +151,7 @@ class Logger {
 	 * @param array    $context  Additional context data.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function wp_error( WP_Error $wp_error, array $context = [] ): void {
 		$context['error_code'] = $wp_error->get_error_code();
@@ -173,6 +168,7 @@ class Logger {
 	 * @param string $level   Log level.
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	public function log( string $message, array $context = [], string $level = 'INFO' ): void {
 		if ( ! $this->enabled ) {
@@ -197,6 +193,7 @@ class Logger {
 	 * Clear the log file
 	 *
 	 * @return bool True on success, false on failure.
+	 * @since 1.0.0
 	 */
 	public function clear(): bool {
 		if ( file_exists( $this->log_file ) ) {
@@ -210,6 +207,7 @@ class Logger {
 	 * Get log contents
 	 *
 	 * @return string Log file contents.
+	 * @since 1.0.0
 	 */
 	public function get_contents(): string {
 		if ( ! file_exists( $this->log_file ) ) {
@@ -223,6 +221,7 @@ class Logger {
 	 * Get log file path
 	 *
 	 * @return string Log file path.
+	 * @since 1.0.0
 	 */
 	public function get_file(): string {
 		return $this->log_file;
@@ -232,26 +231,64 @@ class Logger {
 	 * Check if logging is enabled
 	 *
 	 * @return bool True if enabled, false otherwise.
+	 * @since 1.0.0
 	 */
 	public function is_enabled(): bool {
 		return $this->enabled;
 	}
 
 	/**
-	 * Get default log file path
+	 * Determine if logging should be enabled by default
 	 *
-	 * @return string Default log file path.
+	 * Checks plugin-specific constant first, then WP_DEBUG.
+	 *
+	 * @return bool True if logging should be enabled.
+	 * @since 1.1.0
 	 */
-	private function get_default_log_file(): string {
+	private function should_enable_logging(): bool {
+		// Check for plugin-specific debug constant (e.g., SUGARCART_DEBUG)
+		$constant = strtoupper( str_replace( '-', '_', $this->name ) ) . '_DEBUG';
+
+		if ( defined( $constant ) ) {
+			return (bool) constant( $constant );
+		}
+
+		// Fall back to WP_DEBUG
+		return defined( 'WP_DEBUG' ) && WP_DEBUG;
+	}
+
+	/**
+	 * Determine log file path with smart defaults
+	 *
+	 * @param string|null $custom_path Custom log file path or filename.
+	 *
+	 * @return string Determined log file path.
+	 * @since 1.1.0
+	 */
+	private function determine_log_file( ?string $custom_path ): string {
+		if ( $custom_path ) {
+			// If just a filename (no slashes), put it in default location
+			if ( ! strpos( $custom_path, '/' ) && ! strpos( $custom_path, '\\' ) ) {
+				$upload_dir = wp_upload_dir();
+
+				return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/' . $custom_path;
+			}
+
+			// Use the provided path as-is
+			return $custom_path;
+		}
+
+		// Default: uploads/{plugin-name}/debug.log
 		$upload_dir = wp_upload_dir();
 
-		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '-debug.log';
+		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/debug.log';
 	}
 
 	/**
 	 * Setup log directory with security
 	 *
 	 * @return void
+	 * @since 1.0.0
 	 */
 	private function setup_log_directory(): void {
 		$dir = dirname( $this->log_file );
@@ -264,6 +301,12 @@ class Logger {
 		$htaccess = trailingslashit( $dir ) . '.htaccess';
 		if ( ! file_exists( $htaccess ) ) {
 			file_put_contents( $htaccess, "Deny from all\n" );
+		}
+
+		// Add index.php for additional protection
+		$index = trailingslashit( $dir ) . 'index.php';
+		if ( ! file_exists( $index ) ) {
+			file_put_contents( $index, "<?php\n// Silence is golden.\n" );
 		}
 	}
 

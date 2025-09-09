@@ -1,16 +1,17 @@
 # WordPress Logger
 
-A simple, lean logging library for WordPress plugins and themes. Provides clean APIs for error logging, debugging, and exception handling with automatic file management and security.
+A simple, lean logging library for WordPress plugins and themes with smart defaults. Zero-config initialization that automatically follows WordPress debug conventions.
 
 ## Features
 
-* 🚀 **Simple Setup**: One-line initialization with sensible defaults
+* 🚀 **Zero Configuration**: Works immediately with WordPress debug settings
+* 🎯 **Smart Defaults**: Automatically follows `WP_DEBUG` - no boilerplate needed
 * 📝 **Standard Log Levels**: Error, warning, info, and debug logging
-* 🔒 **Automatic Security**: Built-in .htaccess protection for log files
+* 🔒 **Automatic Security**: Built-in .htaccess and index.php protection
 * 🐛 **Exception Handling**: Native support for exceptions and WP_Error objects
-* 📂 **Smart File Management**: Automatic directory creation and path resolution
-* ⚡ **Lightweight**: Minimal overhead with maximum functionality
-* 🎛️ **Configurable**: Debug mode and custom file paths supported
+* 📂 **Flexible Paths**: Use simple filenames or full paths
+* ⚡ **Lightweight**: ~240 lines of focused code
+* 🎛️ **Plugin-Specific Control**: Enable debugging per plugin via wp-config.php
 
 ## Requirements
 
@@ -25,63 +26,56 @@ composer require arraypress/wp-logger
 
 ## Basic Usage
 
-### Simple Setup
+### Zero Configuration
 
 ```php
-use ArrayPress\WPLogger\Logger;
+use ArrayPress\Logger\Logger;
 
-// Basic logger for your plugin
+// That's it! Automatically follows WP_DEBUG
 $logger = new Logger( 'my-plugin' );
 
-// Log messages
+// Start logging
 $logger->error( 'Payment processing failed' );
 $logger->warning( 'Low inventory alert' );
 $logger->info( 'Order processed successfully' );
 $logger->debug( 'Debug information' );
 ```
 
-### With Configuration
+### Custom Configuration
 
 ```php
-// Enable debug mode and custom path
+// Just a custom filename (goes to uploads/my-plugin/custom.log)
 $logger = new Logger( 'my-plugin', [
-    'debug_mode' => true,
-    'log_file'   => WP_CONTENT_DIR . '/debug/my-plugin.log'
-]);
+    'log_file' => 'custom.log'
+] );
+
+// Or specify a full path
+$logger = new Logger( 'my-plugin', [
+    'log_file' => WP_CONTENT_DIR . '/logs/my-plugin.log'
+] );
+
+// Force enable logging regardless of WP_DEBUG
+$logger = new Logger( 'my-plugin', [
+    'enabled' => true
+] );
 ```
 
-### Exception Logging
+## Smart Debug Control
+
+The logger automatically detects debug settings in this order:
+
+1. **Plugin-specific constant** (if defined)
+2. **WP_DEBUG constant** (WordPress standard)
+
+### Via wp-config.php
 
 ```php
-try {
-    // Your code here
-    process_payment( $data );
-} catch ( Exception $e ) {
-    $logger->exception( $e, ['user_id' => 123] );
-}
+// Enable debugging for specific plugin only
+define( 'MY_PLUGIN_DEBUG', true );
+
+// Or use WordPress debug (affects all loggers using defaults)
+define( 'WP_DEBUG', true );
 ```
-
-### WordPress Error Handling
-
-```php
-$result = wp_remote_get( $url );
-
-if ( is_wp_error( $result ) ) {
-    $logger->wp_error( $result, ['url' => $url] );
-}
-```
-
-### Context Data
-
-```php
-$logger->error( 'Database connection failed', [
-    'host'     => DB_HOST,
-    'database' => DB_NAME,
-    'user_id'  => get_current_user_id()
-]);
-```
-
-## Advanced Usage
 
 ### Plugin Integration
 
@@ -90,9 +84,8 @@ class MyPlugin {
     private Logger $logger;
     
     public function __construct() {
-        $this->logger = new Logger( 'my-plugin', [
-            'debug_mode' => defined( 'MY_PLUGIN_DEBUG' ) && MY_PLUGIN_DEBUG
-        ]);
+        // Automatically uses MY_PLUGIN_DEBUG or WP_DEBUG
+        $this->logger = new Logger( 'my-plugin' );
     }
     
     public function process_order( $order_data ) {
@@ -109,38 +102,60 @@ class MyPlugin {
 }
 ```
 
-### Helper Functions
+## Exception and Error Handling
+
+### Exceptions
 
 ```php
-// Create global helper functions
-function log_error( string $message, array $context = [] ): void {
-    MyPlugin()->logger->error( $message, $context );
+try {
+    process_payment( $data );
+} catch ( Exception $e ) {
+    $logger->exception( $e, ['user_id' => 123] );
+    // Automatically logs message, file, line, and stack trace
 }
+```
 
-function log_debug( string $message, array $context = [] ): void {
-    MyPlugin()->logger->debug( $message, $context );
+### WordPress Errors
+
+```php
+$result = wp_remote_get( $url );
+
+if ( is_wp_error( $result ) ) {
+    $logger->wp_error( $result, ['url' => $url] );
+    // Automatically logs error code, message, and data
 }
+```
+
+### Context Data
+
+```php
+$logger->error( 'Database connection failed', [
+    'host'     => DB_HOST,
+    'database' => DB_NAME,
+    'user_id'  => get_current_user_id(),
+    'memory'   => memory_get_usage()
+] );
 ```
 
 ## Configuration Options
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `log_file` | string | `uploads/{name}-debug.log` | Custom log file path |
-| `enabled` | bool | `true` | Whether logging is enabled |
-| `debug_mode` | bool | `false` | Whether debug logging is enabled |
+| `enabled` | bool | Follows `{PLUGIN}_DEBUG` or `WP_DEBUG` | Whether logging is enabled |
+| `log_file` | string | `uploads/{plugin-name}/debug.log` | Log file path or filename |
 
 ## File Locations
 
-By default, logs are stored in:
+Default location:
 ```
-wp-content/uploads/{plugin-name}-debug.log
+wp-content/uploads/{plugin-name}/debug.log
 ```
 
 The library automatically:
-- Creates the directory if it doesn't exist
-- Adds `.htaccess` protection to prevent direct access
-- Uses WordPress-standard file permissions
+- Creates directories as needed
+- Adds `.htaccess` to deny direct access
+- Adds `index.php` for additional security
+- Uses proper WordPress file permissions
 
 ## Log Format
 
@@ -150,35 +165,38 @@ The library automatically:
 [2025-01-15T10:30:47+00:00] DEBUG: Cache cleared {"cache_key":"user_123_orders"}
 ```
 
-## Available Methods
+## API Reference
 
 ### Logging Methods
+
 - `error( string $message, array $context = [] )` - Log error messages
 - `warning( string $message, array $context = [] )` - Log warnings
 - `info( string $message, array $context = [] )` - Log informational messages
-- `debug( string $message, array $context = [] )` - Log debug information (requires debug_mode)
+- `debug( string $message, array $context = [] )` - Log debug information
+- `log( string $message, array $context = [], string $level = 'INFO' )` - Generic logging
 
 ### Specialized Methods
-- `exception( Exception $exception, array $context = [] )` - Log exceptions with stack trace
+
+- `exception( Throwable $exception, array $context = [] )` - Log exceptions with trace
 - `wp_error( WP_Error $wp_error, array $context = [] )` - Log WordPress errors
 
 ### Utility Methods
+
 - `clear()` - Clear the log file
 - `get_contents()` - Get log file contents
 - `get_file()` - Get log file path
 - `is_enabled()` - Check if logging is enabled
 
-## Security
+## Why This Logger?
 
-The library automatically protects log files by:
-- Creating `.htaccess` files to deny direct access
-- Storing logs outside the web root when possible
-- Using WordPress-standard file permissions
+Unlike complex logging libraries, this logger is designed specifically for WordPress with just enough features:
 
-## Requirements
+- **No configuration required** - Uses WordPress conventions by default
+- **No dependencies** - Just one simple class
+- **WordPress-native** - Uses WordPress functions and follows WordPress patterns
+- **Predictable** - Does exactly what you expect, nothing more
 
-- PHP 7.4+
-- WordPress 5.0+
+Perfect for plugins and themes that need reliable logging without the overhead of large logging frameworks.
 
 ## Contributing
 
