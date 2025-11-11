@@ -7,15 +7,14 @@
  * @package     ArrayPress\Logger
  * @copyright   Copyright (c) 2025, ArrayPress Limited
  * @license     GPL-2.0-or-later
- * @version     1.1.0
- * @author      ArrayPress
+ * @version     1.0.0
+ * @author      David Sherlock
  */
 
 declare( strict_types=1 );
 
 namespace ArrayPress\Logger;
 
-use Exception;
 use Throwable;
 use WP_Error;
 
@@ -268,7 +267,7 @@ class Logger {
 	private function determine_log_file( ?string $custom_path ): string {
 		if ( $custom_path ) {
 			// If just a filename (no slashes), put it in default location
-			if ( ! strpos( $custom_path, '/' ) && ! strpos( $custom_path, '\\' ) ) {
+			if ( ! str_contains( $custom_path, '/' ) && ! str_contains( $custom_path, '\\' ) ) {
 				$upload_dir = wp_upload_dir();
 
 				return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/' . $custom_path;
@@ -278,10 +277,10 @@ class Logger {
 			return $custom_path;
 		}
 
-		// Default: uploads/{plugin-name}/debug.log
+		// Default: uploads/{plugin-name}/{plugin-name}.log
 		$upload_dir = wp_upload_dir();
 
-		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/debug.log';
+		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/' . $this->name . '.log';
 	}
 
 	/**

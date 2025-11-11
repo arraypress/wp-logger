@@ -1,7 +1,7 @@
 {
   "name": "arraypress/wp-logger",
-  "version": "1.0.0",
-  "description": "A simple, lean logging library for WordPress plugins and themes.",
+  "version": "2.0.0",
+  "description": "A simple, lean logging library for WordPress plugins and themes with registry pattern support.",
   "type": "library",
   "license": "GPL-2.0-or-later",
   "homepage": "https://github.com/arraypress/wp-logger/",
@@ -17,7 +17,10 @@
   "autoload": {
     "psr-4": {
       "ArrayPress\\Logger\\": "src/"
-    }
+    },
+    "files": [
+      "src/Functions.php"
+    ]
   },
   "config": {
     "optimize-autoloader": true,
@@ -37,6 +40,7 @@
     "wp",
     "arraypress",
     "error-handling",
-    "exceptions"
+    "exceptions",
+    "registry"
   ]
 }

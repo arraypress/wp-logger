@@ -1,16 +1,17 @@
 # WordPress Logger
 
-A simple, lean logging library for WordPress plugins and themes with smart defaults. Zero-config initialization that automatically follows WordPress debug conventions.
+A simple, lean logging library for WordPress plugins and themes with smart defaults and registry pattern support. Zero-config initialization that automatically follows WordPress debug conventions.
 
 ## Features
 
 * 🚀 **Zero Configuration**: Works immediately with WordPress debug settings
+* 📦 **Registry Pattern**: Centralized logger management across plugins
 * 🎯 **Smart Defaults**: Automatically follows `WP_DEBUG` - no boilerplate needed
 * 📝 **Standard Log Levels**: Error, warning, info, and debug logging
 * 🔒 **Automatic Security**: Built-in .htaccess and index.php protection
 * 🐛 **Exception Handling**: Native support for exceptions and WP_Error objects
 * 📂 **Flexible Paths**: Use simple filenames or full paths
-* ⚡ **Lightweight**: ~240 lines of focused code
+* ⚡ **Lightweight**: Minimal, focused code
 * 🎛️ **Plugin-Specific Control**: Enable debugging per plugin via wp-config.php
 
 ## Requirements
@@ -19,43 +20,63 @@ A simple, lean logging library for WordPress plugins and themes with smart defau
 * WordPress 5.0 or later
 
 ## Installation
-
 ```bash
 composer require arraypress/wp-logger
 ```
 
 ## Basic Usage
 
-### Zero Configuration
-
+### Using the Registry (Recommended)
 ```php
-use ArrayPress\Logger\Logger;
+// Register once in your main plugin file
+// Creates: wp-content/uploads/my-plugin/my-plugin.log
+register_logger( 'my-plugin' );
 
-// That's it! Automatically follows WP_DEBUG
-$logger = new Logger( 'my-plugin' );
-
-// Start logging
+// Get and use anywhere in your plugin
+$logger = get_logger( 'my-plugin' );
 $logger->error( 'Payment processing failed' );
 $logger->warning( 'Low inventory alert' );
 $logger->info( 'Order processed successfully' );
 $logger->debug( 'Debug information' );
 ```
 
-### Custom Configuration
-
+### Direct Instantiation
 ```php
-// Just a custom filename (goes to uploads/my-plugin/custom.log)
-$logger = new Logger( 'my-plugin', [
-    'log_file' => 'custom.log'
+use ArrayPress\Logger\Logger;
+
+// Create directly if you prefer
+// Creates: wp-content/uploads/my-plugin/my-plugin.log
+$logger = new Logger( 'my-plugin' );
+
+// Start logging
+$logger->error( 'Payment processing failed' );
+$logger->info( 'Order processed successfully' );
+```
+
+### Custom Configuration
+```php
+// Custom filename within plugin directory
+// Creates: wp-content/uploads/my-plugin/errors.log
+register_logger( 'my-plugin', [
+    'log_file' => 'errors.log'
 ] );
 
-// Or specify a full path
-$logger = new Logger( 'my-plugin', [
-    'log_file' => WP_CONTENT_DIR . '/logs/my-plugin.log'
+// Multiple loggers for different purposes
+register_logger( 'my-plugin' );           // → uploads/my-plugin/my-plugin.log
+register_logger( 'my-plugin-api', [
+    'log_file' => 'api.log'                // → uploads/my-plugin-api/api.log
+] );
+register_logger( 'my-plugin-payments', [
+    'log_file' => 'payments.log'           // → uploads/my-plugin-payments/payments.log
+] );
+
+// Full path override
+register_logger( 'my-plugin', [
+    'log_file' => WP_CONTENT_DIR . '/logs/custom.log'
 ] );
 
 // Force enable logging regardless of WP_DEBUG
-$logger = new Logger( 'my-plugin', [
+register_logger( 'my-plugin', [
     'enabled' => true
 ] );
 ```
@@ -68,7 +89,6 @@ The logger automatically detects debug settings in this order:
 2. **WP_DEBUG constant** (WordPress standard)
 
 ### Via wp-config.php
-
 ```php
 // Enable debugging for specific plugin only
 define( 'MY_PLUGIN_DEBUG', true );
@@ -77,35 +97,65 @@ define( 'MY_PLUGIN_DEBUG', true );
 define( 'WP_DEBUG', true );
 ```
 
-### Plugin Integration
-
+## Plugin Integration Pattern
 ```php
-class MyPlugin {
-    private Logger $logger;
+namespace MyPlugin;
+
+use function ArrayPress\Logger\register_logger;
+use function ArrayPress\Logger\get_logger;
+
+class Plugin {
     
     public function __construct() {
-        // Automatically uses MY_PLUGIN_DEBUG or WP_DEBUG
-        $this->logger = new Logger( 'my-plugin' );
+        // Register logger once
+        // Creates: wp-content/uploads/my-plugin/my-plugin.log
+        register_logger( 'my-plugin' );
     }
     
     public function process_order( $order_data ) {
-        $this->logger->info( 'Processing order', ['order_id' => $order_data['id']] );
+        $logger = get_logger( 'my-plugin' );
+        $logger->info( 'Processing order', ['order_id' => $order_data['id']] );
         
         try {
             // Process order logic
-            $this->logger->info( 'Order processed successfully' );
+            $logger->info( 'Order processed successfully' );
         } catch ( Exception $e ) {
-            $this->logger->exception( $e, ['order_data' => $order_data] );
+            $logger->exception( $e, ['order_data' => $order_data] );
             throw $e;
         }
     }
 }
 ```
 
+### Creating Plugin Wrapper Functions (Optional)
+
+For convenience, you can create wrapper functions in your plugin:
+```php
+namespace MyPlugin;
+
+use ArrayPress\Logger\Logger;
+use function ArrayPress\Logger\get_logger;
+
+function logger(): ?Logger {
+    return get_logger( 'my-plugin' );
+}
+
+function log_error( string $message, array $context = [] ): void {
+    logger()?->error( $message, $context );
+}
+
+function log_info( string $message, array $context = [] ): void {
+    logger()?->info( $message, $context );
+}
+
+// Usage anywhere in your plugin
+\MyPlugin\log_error( 'Database connection failed' );
+\MyPlugin\log_info( 'Cache cleared successfully' );
+```
+
 ## Exception and Error Handling
 
 ### Exceptions
-
 ```php
 try {
     process_payment( $data );
@@ -116,7 +166,6 @@ try {
 ```
 
 ### WordPress Errors
-
 ```php
 $result = wp_remote_get( $url );
 
@@ -127,7 +176,6 @@ if ( is_wp_error( $result ) ) {
 ```
 
 ### Context Data
-
 ```php
 $logger->error( 'Database connection failed', [
     'host'     => DB_HOST,
@@ -142,14 +190,19 @@ $logger->error( 'Database connection failed', [
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | bool | Follows `{PLUGIN}_DEBUG` or `WP_DEBUG` | Whether logging is enabled |
-| `log_file` | string | `uploads/{plugin-name}/debug.log` | Log file path or filename |
+| `log_file` | string | `uploads/{plugin-name}/{plugin-name}.log` | Log file path or filename |
 
 ## File Locations
 
-Default location:
+Default location pattern:
 ```
-wp-content/uploads/{plugin-name}/debug.log
+wp-content/uploads/{plugin-name}/{plugin-name}.log
 ```
+
+Examples:
+- `sugarcart` → `wp-content/uploads/sugarcart/sugarcart.log`
+- `my-plugin` → `wp-content/uploads/my-plugin/my-plugin.log`
+- `woocommerce` → `wp-content/uploads/woocommerce/woocommerce.log`
 
 The library automatically:
 - Creates directories as needed
@@ -158,7 +211,6 @@ The library automatically:
 - Uses proper WordPress file permissions
 
 ## Log Format
-
 ```
 [2025-01-15T10:30:45+00:00] ERROR: Payment processing failed {"user_id":123,"amount":99.99}
 [2025-01-15T10:30:46+00:00] INFO: Order processed successfully {"order_id":"12345"}
@@ -166,6 +218,13 @@ The library automatically:
 ```
 
 ## API Reference
+
+### Registry Functions
+
+- `register_logger( string $name, array $options = [] ): Logger` - Register a new logger
+- `get_logger( string $name ): ?Logger` - Get a registered logger
+- `has_logger( string $name ): bool` - Check if a logger exists
+- `remove_logger( string $name ): bool` - Remove a logger
 
 ### Logging Methods
 
@@ -194,6 +253,8 @@ Unlike complex logging libraries, this logger is designed specifically for WordP
 - **No configuration required** - Uses WordPress conventions by default
 - **No dependencies** - Just one simple class
 - **WordPress-native** - Uses WordPress functions and follows WordPress patterns
+- **Registry pattern** - Centralized management without globals
+- **Smart naming** - Each plugin gets its own named log file automatically
 - **Predictable** - Does exactly what you expect, nothing more
 
 Perfect for plugins and themes that need reliable logging without the overhead of large logging frameworks.
