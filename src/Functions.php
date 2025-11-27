@@ -60,6 +60,8 @@ if ( ! function_exists( 'get_logger' ) ) {
 	}
 }
 
+
+
 if ( ! function_exists( 'has_logger' ) ) {
 	/**
 	 * Check if a logger exists
