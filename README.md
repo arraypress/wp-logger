@@ -16,7 +16,7 @@ A simple, lean logging library for WordPress plugins and themes with smart defau
 
 ## Requirements
 
-* PHP 7.4 or later
+* PHP 8.3 or later
 * WordPress 5.0 or later
 
 ## Installation
@@ -55,20 +55,25 @@ $logger->info( 'Order processed successfully' );
 
 ### Custom Configuration
 ```php
-// Custom filename within plugin directory
+// Custom filename within the plugin directory
 // Creates: wp-content/uploads/my-plugin/errors.log
 register_logger( 'my-plugin', [
     'log_file' => 'errors.log'
 ] );
 
-// Multiple loggers for different purposes
-register_logger( 'my-plugin' );           // → uploads/my-plugin/my-plugin.log
+// Multiple loggers for different purposes. A bare filename always lands in
+// the directory belonging to the logger's name.
+register_logger( 'my-plugin' );            // → uploads/my-plugin/my-plugin-{hash}.log
 register_logger( 'my-plugin-api', [
     'log_file' => 'api.log'                // → uploads/my-plugin-api/api.log
 ] );
 register_logger( 'my-plugin-payments', [
     'log_file' => 'payments.log'           // → uploads/my-plugin-payments/payments.log
 ] );
+
+// Rotate sooner than the 5 MB default, or not at all.
+register_logger( 'my-plugin', [ 'max_size' => 1048576 ] );
+register_logger( 'my-plugin', [ 'max_size' => 0 ] );
 
 // Full path override
 register_logger( 'my-plugin', [
@@ -190,25 +195,47 @@ $logger->error( 'Database connection failed', [
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `enabled` | bool | Follows `{PLUGIN}_DEBUG` or `WP_DEBUG` | Whether logging is enabled |
-| `log_file` | string | `uploads/{plugin-name}/{plugin-name}.log` | Log file path or filename |
+| `log_file` | string | `uploads/{plugin-name}/{plugin-name}-{hash}.log` | Log file path or filename |
+| `max_size` | int | `5242880` (5 MB) | Bytes after which the log rotates. `0` disables rotation |
 
 ## File Locations
 
 Default location pattern:
 ```
-wp-content/uploads/{plugin-name}/{plugin-name}.log
+wp-content/uploads/{plugin-name}/{plugin-name}-{hash}.log
 ```
 
 Examples:
-- `sugarcart` → `wp-content/uploads/sugarcart/sugarcart.log`
-- `my-plugin` → `wp-content/uploads/my-plugin/my-plugin.log`
-- `woocommerce` → `wp-content/uploads/woocommerce/woocommerce.log`
+- `sugarcart` → `wp-content/uploads/sugarcart/sugarcart-3f2a…c91.log`
+- `my-plugin` → `wp-content/uploads/my-plugin/my-plugin-8b41…2de.log`
 
 The library automatically:
 - Creates directories as needed
 - Adds `.htaccess` to deny direct access
 - Adds `index.php` for additional security
-- Uses proper WordPress file permissions
+- Rotates the log once it passes `max_size`, keeping one previous generation
+  as `{file}.log.1`
+
+### Why the filename carries a hash
+
+`.htaccess` is an Apache file. On nginx — which a great many WordPress hosts
+run — it is ignored entirely and the uploads directory is served as ordinary
+static files. A predictable log name is then a predictable URL for a file
+holding email addresses, IP addresses and gateway responses.
+
+The suffix is `wp_hash()` of the logger name, so it is derived from the site's
+own salts and cannot be guessed from outside. It is stable, so the path does
+not change between requests. This is the approach WooCommerce takes for the
+same reason.
+
+Passing an explicit `log_file` opts out of this, so put such a file somewhere
+that is not web-served.
+
+## Rotation
+
+Once the log would pass `max_size` (5 MB by default) it is renamed to
+`{file}.log.1` and a fresh file started. Only one previous generation is kept,
+so a site left in debug mode cannot fill its disk. `clear()` removes both.
 
 ## Log Format
 ```

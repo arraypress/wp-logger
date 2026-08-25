@@ -14,6 +14,16 @@
 
 declare( strict_types=1 );
 
+// Exit if accessed directly
+// return, not exit. This file is a Composer `files` autoload entry, so it runs
+// whenever anything requires the autoloader -- phpunit, phpcs, a composer
+// script. Ending the process there kills the tool with status 0 and no output,
+// which reads as success: a lint that never looked at a file, or a test suite
+// that never ran, both report as passing.
+if ( ! defined( 'ABSPATH' ) ) {
+	return;
+}
+
 use ArrayPress\Logger\Logger;
 use ArrayPress\Logger\Registry;
 
@@ -29,7 +39,9 @@ if ( ! function_exists( 'register_logger' ) ) {
 	 *                         Optional configuration arguments.
 	 *
 	 * @type bool    $enabled  Whether logging is enabled. Default: follows {NAME}_DEBUG or WP_DEBUG.
-	 * @type string  $log_file Custom log file path or filename. Default: uploads/{name}/debug.log.
+	 * @type string  $log_file Custom log file path or filename. Default:
+	 *                         uploads/{name}/{name}-{hash}.log.
+	 * @type int     $max_size Bytes after which the log rotates. Default 5 MB.
 	 *                         }
 	 *
 	 * @return Logger The logger instance.

@@ -239,5 +239,4 @@ class Registry {
 	public static function reset(): void {
 		self::$instance = null;
 	}
-
 }

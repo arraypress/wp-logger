@@ -28,11 +28,26 @@ use WP_Error;
 class Logger {
 
 	/**
+	 * Default size, in bytes, at which the log rotates.
+	 *
+	 * @since 2.1.0
+	 * @var int
+	 */
+	public const DEFAULT_MAX_SIZE = 5242880;
+
+	/**
 	 * Plugin/theme identifier
 	 *
 	 * @var string
 	 */
 	private string $name;
+
+	/**
+	 * Bytes after which the log rotates. Zero disables rotation.
+	 *
+	 * @var int
+	 */
+	private int $max_size;
 
 	/**
 	 * Log file path
@@ -57,7 +72,10 @@ class Logger {
 	 *                         Optional configuration arguments.
 	 *
 	 * @type bool    $enabled  Whether logging is enabled. Default: follows WP_DEBUG.
-	 * @type string  $log_file Custom log file path or filename. Default: uploads/{name}/debug.log.
+	 * @type string  $log_file Custom log file path or filename. Default:
+	 *                         uploads/{name}/{name}-{hash}.log.
+	 * @type int     $max_size Bytes after which the log rotates. Default 5 MB.
+	 *                         Pass 0 to let it grow without limit.
 	 *                         }
 	 *
 	 * @since 1.0.0
@@ -65,6 +83,7 @@ class Logger {
 	public function __construct( string $name, array $options = [] ) {
 		$this->name     = sanitize_key( $name );
 		$this->enabled  = $options['enabled'] ?? $this->should_enable_logging();
+		$this->max_size = max( 0, (int) ( $options['max_size'] ?? self::DEFAULT_MAX_SIZE ) );
 		$this->log_file = $this->determine_log_file( $options['log_file'] ?? null );
 
 		$this->setup_log_directory();
@@ -185,7 +204,35 @@ class Logger {
 			$context_str
 		);
 
-		error_log( $entry, 3, $this->log_file );
+		$this->maybe_rotate( strlen( $entry ) );
+
+		file_put_contents( $this->log_file, $entry, FILE_APPEND | LOCK_EX );
+	}
+
+	/**
+	 * Rotate the log when the next write would take it past the size limit.
+	 *
+	 * Keeps a single previous generation as {file}.1, so a plugin left in
+	 * debug mode cannot fill the disk.
+	 *
+	 * @param int $incoming Length in bytes of the entry about to be written.
+	 *
+	 * @return void
+	 * @since 2.1.0
+	 */
+	private function maybe_rotate( int $incoming ): void {
+		if ( 0 === $this->max_size || ! file_exists( $this->log_file ) ) {
+			return;
+		}
+
+		$size = filesize( $this->log_file );
+
+		if ( false === $size || $size + $incoming <= $this->max_size ) {
+			return;
+		}
+
+		// rename() replaces an existing destination, so the older generation goes.
+		rename( $this->log_file, $this->log_file . '.1' );
 	}
 
 	/**
@@ -195,11 +242,16 @@ class Logger {
 	 * @since 1.0.0
 	 */
 	public function clear(): bool {
-		if ( file_exists( $this->log_file ) ) {
-			return unlink( $this->log_file );
+		$cleared = true;
+
+		// The rotated generation goes too, or clear() leaves most of the log behind.
+		foreach ( [ $this->log_file, $this->log_file . '.1' ] as $file ) {
+			if ( file_exists( $file ) && ! unlink( $file ) ) {
+				$cleared = false;
+			}
 		}
 
-		return true;
+		return $cleared;
 	}
 
 	/**
@@ -277,10 +329,20 @@ class Logger {
 			return $custom_path;
 		}
 
-		// Default: uploads/{plugin-name}/{plugin-name}.log
+		/*
+		 * Default: uploads/{name}/{name}-{hash}.log
+		 *
+		 * The hash is what keeps the log private. The .htaccess written by
+		 * setup_log_directory() only applies on Apache -- nginx serves the
+		 * directory as ordinary static files -- so a predictable name means a
+		 * predictable URL for a file holding addresses, IPs and gateway
+		 * responses. wp_hash() is salted per site, so the name cannot be
+		 * guessed from outside. This is the approach WooCommerce takes.
+		 */
 		$upload_dir = wp_upload_dir();
+		$filename   = $this->name . '-' . wp_hash( $this->name ) . '.log';
 
-		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/' . $this->name . '.log';
+		return trailingslashit( $upload_dir['basedir'] ) . $this->name . '/' . $filename;
 	}
 
 	/**
@@ -308,5 +370,4 @@ class Logger {
 			file_put_contents( $index, "<?php\n// Silence is golden.\n" );
 		}
 	}
-
 }
